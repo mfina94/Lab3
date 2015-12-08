@@ -15,6 +15,9 @@
  */
 package net.java.otr4j.session;
 
+
+import java.io.FileNotFoundException;
+import java.util.concurrent.CountDownLatch;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -28,7 +31,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 import java.util.Scanner;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
+import java.io.File;
 
 import net.java.otr4j.OtrEngineHost;
 import net.java.otr4j.OtrException;
@@ -122,6 +127,7 @@ public class DummyClient implements ActionListener, Runnable{
 						System.out.println("Yay");
 					}
 
+
 					String msg;
 					alice.send(bob.getAccount(), msg = "Alice: Hello Bob, this new IM software you installed on my PC the other day says we are talking Off-the-Record, what's that supposed to mean?");
 					alice.display(msg);
@@ -129,20 +135,49 @@ public class DummyClient implements ActionListener, Runnable{
 						System.out.println("Message failed to be sent with encryption");
 					}
 
-					alice.send(bob.getAccount(), msg="What did you have for breakfest");
-					alice.display(msg);
-					alice.getSession().initSmp("What did you have for breakfest","Coffee");
-					System.out.println(alice.getSession().isSmpInProgress());
+					String[] aliceSMP = importSMP("H:\\otr4j-master\\src\\test\\java\\net\\java\\otr4j\\alice.txt");
+					String[] bobSMP = importSMP("H:\\otr4j-master\\src\\test\\java\\net\\java\\otr4j\\bob.txt");
 
-					//bob.getSession().initSmp("What did you have for breakfest","Coffee");
-					//System.out.println(bob.getSession().isSmpInProgress());
-
-					//alice.getSession().respondSmp(alice.getSession().getReceiverInstanceTag(),msg,"Coffee");
-					//System.out.println(alice.getSession().isSmpInProgress());
+					String aliceQ = aliceSMP[0].split("=")[1];
+					String aliceA = aliceSMP[1].split("=")[1];
+					String bobA = bobSMP[0].split("=")[1];
 
 
-					bob.getSession().respondSmp(bob.getSession().getReceiverInstanceTag(),msg,"Coffee");
-					System.out.println(bob.getSession().isSmpInProgress());
+					alice.getSession().initSmp(aliceQ, aliceA);
+					System.out.println(alice.getSession().isSmpInProgress());//true
+					System.out.println(bob.getSession().isSmpInProgress());//false
+
+					ProcessedMessage pMsg;
+					pMsg = bob.pollReceivedMessage();
+
+					CountDownLatch bobLock = new CountDownLatch(1);
+
+					bobLock.await(10000, TimeUnit.MILLISECONDS);
+
+
+					bob.getSession().respondSmp(bob.getSession().getReceiverInstanceTag(), pMsg.getContent(),bobA);
+
+					System.out.println(alice.getSession().isSmpInProgress());//true
+					System.out.println(bob.getSession().isSmpInProgress());//true
+
+					//SMP2
+					alice.pollReceivedMessage();
+					System.out.println(alice.getSession().isSmpInProgress());//true
+					System.out.println(bob.getSession().isSmpInProgress());//true
+
+					//smp3
+					bob.pollReceivedMessage();
+					System.out.println(alice.getSession().isSmpInProgress());//true
+					System.out.println(bob.getSession().isSmpInProgress());//true
+
+					//smp4
+					alice.pollReceivedMessage();
+					System.out.println(alice.getSession().isSmpInProgress());//false
+					System.out.println(bob.getSession().isSmpInProgress());//false
+
+					alice.display("Verified recipient");
+					bob.display("Verified recipient");
+
 				}
 				catch(OtrException e){
 					e.printStackTrace();
@@ -157,6 +192,19 @@ public class DummyClient implements ActionListener, Runnable{
 		});
 	}
 
+	public static String[] importSMP(String path) throws FileNotFoundException {
+		File playerFile = new File(path);
+		Scanner sc = new Scanner(playerFile);
+		int index = 0;
+		String[] fileStringArray = new String[100];
+		while (sc.hasNextLine() && index < 100) {
+			String line = sc.nextLine();
+			fileStringArray[index] = line;
+			index++;
+		}
+
+		return fileStringArray;
+	}
 
 	//@Override
 	public void actionPerformed(ActionEvent ae) {
@@ -262,7 +310,7 @@ public class DummyClient implements ActionListener, Runnable{
 			connection.send(recipient, part);
 			msg=msg+part;
 		}
-		if (!msg.equals("") || msg != null || out != null){
+		if (!msg.equals("") || msg != null || out != null || !msg.equals("null")){
 			out.println(msg);
 		}
 	}
