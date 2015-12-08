@@ -822,6 +822,7 @@ public class SessionImpl implements Session {
 			return this.slaveSessions.getSelected().transformSending(msgText, tlvs);
 		}
 
+
 		switch (this.getSessionStatus()) {
 		case PLAINTEXT:
 			OtrPolicy otrPolicy = getSessionPolicy();

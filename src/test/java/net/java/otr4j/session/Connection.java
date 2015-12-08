@@ -16,7 +16,7 @@
 package net.java.otr4j.session;
 
 import net.java.otr4j.OtrException;
-
+import java.net.*;
 /**
  * @author George Politis
  */

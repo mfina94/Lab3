@@ -15,36 +15,213 @@
  */
 package net.java.otr4j.session;
 
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+import java.util.Scanner;
 import java.util.logging.Logger;
 
 import net.java.otr4j.OtrEngineHost;
 import net.java.otr4j.OtrException;
 import net.java.otr4j.OtrPolicy;
+import net.java.otr4j.OtrPolicyImpl;
 import net.java.otr4j.crypto.OtrCryptoEngineImpl;
 import net.java.otr4j.crypto.OtrCryptoException;
 
-/**
- * @author George Politis
- */
-public class DummyClient {
+import javax.swing.*;
+import javax.swing.text.DefaultCaret;
 
+/**
+ * OTR Chat Client - University of Iowa Senior Design Lab
+ * Matt, Tyler, Eli, Bob
+ *
+ * Thank you to..
+ * @author George Politis & libotr
+ */
+public class DummyClient implements ActionListener, Runnable{
+
+	//private members already here
 	private static Logger logger = Logger.getLogger(SessionImplTest.class
 			.getName());
 	private final String account;
+	private final String recipient;
 	private Session session;
 	private OtrPolicy policy;
 	private Connection connection;
 	private MessageProcessor processor;
 	private Queue<ProcessedMessage> processedMsgs = new LinkedList<ProcessedMessage>();
 
-	public DummyClient(String account) {
+	//for display and connection
+	private static final String HOST = "127.0.0.1";
+	private static final int PORT = 12345;
+	private final JFrame f = new JFrame();
+	private final JTextField tf = new JTextField(25);
+	private final JTextArea ta = new JTextArea(15, 25);
+	private final JButton send = new JButton("Send");
+	private volatile PrintWriter out;
+	private Scanner in;
+	private Thread thread;
+	private Kind kind;
+
+	public static enum Kind {
+
+		Client(100, "Trying"), Server(500, "Awaiting");
+		private int offset;
+		private String activity;
+
+		private Kind(int offset, String activity) {
+			this.offset = offset;
+			this.activity = activity;
+		}
+	}
+
+	public static void main (String args[]){
+		EventQueue.invokeLater(new Runnable() {
+			//@Override
+			public void run() {
+				DummyClient alice = new DummyClient(Kind.Server, "Alice");
+				DummyClient bob = new DummyClient(Kind.Client, "Bob");
+				try{
+					OtrPolicy alicePolicy = new OtrPolicyImpl(OtrPolicy.ALLOW_V2 | OtrPolicy.ALLOW_V3
+							| OtrPolicy.ERROR_START_AKE);
+					alice.setPolicy(alicePolicy);
+
+					OtrPolicy bobPolicy = new OtrPolicyImpl(OtrPolicy.ALLOW_V2 | OtrPolicy.ALLOW_V3
+							| OtrPolicy.ERROR_START_AKE);
+					bob.setPolicy(bobPolicy);
+
+					bob.start();
+					alice.start();
+
+					Server server = new PriorityServer();
+					alice.connect(server);
+					bob.connect(server);
+
+					//query for otr convo, exchange keys and signatures
+					alice.secureSession("Bob");
+					bob.pollReceivedMessage();//query
+					alice.pollReceivedMessage();//DH_COMMIT
+					bob.pollReceivedMessage();//DH-KEY
+					alice.pollReceivedMessage();//Reveal Signature
+					bob.pollReceivedMessage();//Signature
+
+
+					if (bob.getSession().getSessionStatus() != SessionStatus.ENCRYPTED
+							|| alice.getSession().getSessionStatus() != SessionStatus.ENCRYPTED)
+						System.out.println("The session is not encrypted.");
+					else {
+						System.out.println("Yay");
+					}
+
+					String msg;
+					alice.send(bob.getAccount(), msg = "Alice: Hello Bob, this new IM software you installed on my PC the other day says we are talking Off-the-Record, what's that supposed to mean?");
+					alice.display(msg);
+					if (msg.equals(alice.getConnection().getSentMessage())){
+						System.out.println("Message failed to be sent with encryption");
+					}
+
+				}
+				catch(OtrException e){
+					e.printStackTrace();
+				}
+				catch(Exception e){
+					e.printStackTrace();
+				}
+				//catch(OtrException e){
+				//	e.printStackTrace();
+				//}
+			}
+		});
+	}
+
+
+	//@Override
+	public void actionPerformed(ActionEvent ae) {
+		try {
+			String s = account + ": " + tf.getText();
+			if (out != null) {
+				send(recipient,s);
+			}
+			display(s);
+			tf.setText("");
+		}
+		catch (OtrException e)
+		{
+			e.printStackTrace();
+		}
+	}
+
+	private void display(final String s) {
+		EventQueue.invokeLater(new Runnable() {
+			//@Override
+			public void run() {
+				ta.append(s + "\n");
+			}
+		});
+	}
+
+	public void run() {
+		try {
+			Socket socket;
+			if (kind == Kind.Client) {
+				socket = new Socket(HOST, PORT);
+			} else {
+				ServerSocket ss = new ServerSocket(PORT);
+				socket = ss.accept();
+			}
+			in = new Scanner(socket.getInputStream());
+			out = new PrintWriter(socket.getOutputStream(), true);
+			display("Connected");
+			while (true) {
+				//final String disp = session.transformReceiving(in.nextLine());
+				//display(disp);
+				receive(recipient,in.nextLine());
+			}
+		} catch (Exception e) {
+			display(e.getMessage());
+			e.printStackTrace(System.err);
+		}
+	}
+
+	public DummyClient(Kind kind, String account) {
+		if (account.equals("Bob")){
+			this.recipient = "Alice";
+		}
+		else{
+			this.recipient = "Bob";
+		}
+
 		this.account = account;
+		this.kind = kind;
+		f.setTitle("Echo " + account);
+		f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		f.getRootPane().setDefaultButton(send);
+		f.add(tf, BorderLayout.NORTH);
+		f.add(new JScrollPane(ta), BorderLayout.CENTER);
+		f.add(send, BorderLayout.SOUTH);
+		f.setLocation(kind.offset, 300);
+		f.pack();
+		send.addActionListener(this);
+		ta.setLineWrap(true);
+		ta.setWrapStyleWord(true);
+		DefaultCaret caret = (DefaultCaret) ta.getCaret();
+		caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
+		display(kind.activity + HOST + " on port " + PORT);
+		thread = new Thread(this, kind.toString());
+	}
+
+	public void start() {
+		f.setVisible(true);
+		thread.start();
 	}
 
 	public Session getSession() {
@@ -65,9 +242,14 @@ public class DummyClient {
 			session = new SessionImpl(sessionID, new DummyOtrEngineHostImpl());
 		}
 
+		String msg="";
 		String[] outgoingMessage = session.transformSending(s, (List<TLV>) null);
 		for (String part : outgoingMessage) {
 			connection.send(recipient, part);
+			msg=msg+part;
+		}
+		if (!msg.equals("") || msg != null || out != null){
+			out.println(msg);
 		}
 	}
 
@@ -117,6 +299,7 @@ public class DummyClient {
 	class MessageProcessor implements Runnable {
 		private final Queue<Message> messageQueue = new LinkedList<Message>();
 		private boolean stopped;
+		private boolean first = false;
 
 		private void process(Message m) throws OtrException {
 			if (session == null) {
@@ -125,6 +308,13 @@ public class DummyClient {
 			}
 
 			String receivedMessage = session.transformReceiving(m.getContent());
+			if (!first) {
+				display(receivedMessage);
+				first = true;
+			}
+			else{
+				first =false;
+			}
 			synchronized (processedMsgs) {
 				processedMsgs.add(new ProcessedMessage(m, receivedMessage));
 				processedMsgs.notify();
