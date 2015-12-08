@@ -129,6 +129,20 @@ public class DummyClient implements ActionListener, Runnable{
 						System.out.println("Message failed to be sent with encryption");
 					}
 
+					alice.send(bob.getAccount(), msg="What did you have for breakfest");
+					alice.display(msg);
+					alice.getSession().initSmp("What did you have for breakfest","Coffee");
+					System.out.println(alice.getSession().isSmpInProgress());
+
+					//bob.getSession().initSmp("What did you have for breakfest","Coffee");
+					//System.out.println(bob.getSession().isSmpInProgress());
+
+					//alice.getSession().respondSmp(alice.getSession().getReceiverInstanceTag(),msg,"Coffee");
+					//System.out.println(alice.getSession().isSmpInProgress());
+
+
+					bob.getSession().respondSmp(bob.getSession().getReceiverInstanceTag(),msg,"Coffee");
+					System.out.println(bob.getSession().isSmpInProgress());
 				}
 				catch(OtrException e){
 					e.printStackTrace();
